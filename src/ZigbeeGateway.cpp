@@ -175,7 +175,7 @@ void ZigbeeGateway::Z2S_simple_desc_req_cb(esp_zb_zdp_status_t zdo_status, esp_z
       disc_attr_cmd_req.zcl_basic_cmd.src_endpoint = 1;
       disc_attr_cmd_req.address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT;
       disc_attr_cmd_req.cluster_id = *(simple_desc->app_cluster_list+i);
-      disc_attr_cmd_req.direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV;
+      disc_attr_cmd_req.direction = ESP_ZB_ZCL_REPORT_DIRECTION_SEND;
       disc_attr_cmd_req.start_attr_id = 0;
       disc_attr_cmd_req.max_attr_number = 99;
       
@@ -190,7 +190,7 @@ void ZigbeeGateway::Z2S_simple_desc_req_cb(esp_zb_zdp_status_t zdo_status, esp_z
       disc_attr_cmd_req.zcl_basic_cmd.src_endpoint = 1;
       disc_attr_cmd_req.address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT;
       disc_attr_cmd_req.cluster_id = *(simple_desc->app_cluster_list + simple_desc->app_input_cluster_count + i);
-      disc_attr_cmd_req.direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV;
+      disc_attr_cmd_req.direction = ESP_ZB_ZCL_REPORT_DIRECTION_SEND;
       disc_attr_cmd_req.start_attr_id = 0;
       disc_attr_cmd_req.max_attr_number = 99;
       
@@ -426,7 +426,7 @@ void ZigbeeGateway::setIASzoneReporting(uint16_t short_addr, uint16_t endpoint, 
   int16_t report_change = 1;
   esp_zb_zcl_config_report_record_t records[] = {
     {
-      .direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV, //0x00, //ESP_ZB_ZCL_REPORT_DIRECTION_SEND,
+      .direction = ESP_ZB_ZCL_REPORT_DIRECTION_SEND, //0x00, //ESP_ZB_ZCL_REPORT_DIRECTION_SEND,
       .attributeID =  ESP_ZB_ZCL_ATTR_IAS_ZONE_ZONESTATUS_ID,
       .attrType = ESP_ZB_ZCL_ATTR_TYPE_16BITMAP,
       .min_interval = min_interval,
@@ -456,7 +456,7 @@ void ZigbeeGateway::setClusterReporting(uint16_t short_addr, uint16_t endpoint, 
   int16_t report_change = delta;
   esp_zb_zcl_config_report_record_t records[] = {
     {
-      .direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV, //0x00, //ESP_ZB_ZCL_REPORT_DIRECTION_SEND,
+      .direction = ESP_ZB_ZCL_REPORT_DIRECTION_SEND, //0x00, //ESP_ZB_ZCL_REPORT_DIRECTION_SEND,
       .attributeID = attribute_id,
       .attrType = attribute_type, //ESP_ZB_ZCL_ATTR_TYPE_S16,
       .min_interval = min_interval,
@@ -487,7 +487,7 @@ void ZigbeeGateway::setClusterReporting(esp_zb_ieee_addr_t ieee_addr, uint16_t e
   int16_t report_change = delta;
   esp_zb_zcl_config_report_record_t records[] = {
     {
-      .direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV, //0x00, //ESP_ZB_ZCL_REPORT_DIRECTION_SEND,
+      .direction = ESP_ZB_ZCL_REPORT_DIRECTION_SEND, //0x00, //ESP_ZB_ZCL_REPORT_DIRECTION_SEND,
       .attributeID = attribute_id,
       .attrType = attribute_type, //ESP_ZB_ZCL_ATTR_TYPE_S16,
       .min_interval = min_interval,
