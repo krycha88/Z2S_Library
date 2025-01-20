@@ -15,6 +15,7 @@ uint16_t ZigbeeGateway::_endpoints_2_bind = 0;
 uint16_t ZigbeeGateway::_clusters_2_bind = 0;
 //
 
+#define ZB_CMD_TIMEOUT 10000
 
 SemaphoreHandle_t ZigbeeGateway::gt_lock;
 
@@ -56,13 +57,19 @@ ZigbeeGateway::ZigbeeGateway(uint8_t endpoint) : ZigbeeEP(endpoint) {
 
   
   esp_zb_attribute_list_t poll_cluster;
-  
-  poll_cluster.attribute.id = 0x00;
-  poll_cluster.cluster_id = 0x0020;
-  poll_cluster.next = NULL;
+  //esp_zb_attribute_list_t tuya_private_cluster0;
+  //esp_zb_attribute_list_t tuya_private_cluster1;
+
+  //tuya_private_cluster0.attribute.id = 0xD001;
+  //tuya_private_cluster0.cluster_id = 0xE001;
+  //tuya_private_cluster0.next = NULL;
   
   esp_zb_on_off_cluster_cfg_t on_off_cluster;
   on_off_cluster.on_off = ESP_ZB_ZCL_ON_OFF_ON_OFF_DEFAULT_VALUE;
+
+  esp_zb_time_cluster_cfg_t time_cluster;
+  time_cluster.time = ESP_ZB_ZCL_TIME_TIME_DEFAULT_VALUE;
+  time_cluster.time_status = ESP_ZB_ZCL_TIME_TIME_STATUS_DEFAULT_VALUE;
 
   _cluster_list = esp_zb_zcl_cluster_list_create();
   esp_zb_attribute_list_t *basic_cluster = esp_zb_basic_cluster_create(&(gateway_cfg.basic_cfg));
@@ -73,6 +80,8 @@ ZigbeeGateway::ZigbeeGateway(uint8_t endpoint) : ZigbeeEP(endpoint) {
   esp_zb_cluster_list_add_power_config_cluster(_cluster_list, esp_zb_power_config_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_CLIENT_ROLE);
   esp_zb_cluster_list_add_scenes_cluster(_cluster_list, esp_zb_scenes_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_CLIENT_ROLE);
   esp_zb_cluster_list_add_groups_cluster(_cluster_list, esp_zb_groups_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_CLIENT_ROLE);
+
+  esp_zb_cluster_list_add_time_cluster(_cluster_list, esp_zb_time_cluster_create(&time_cluster), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
 
   esp_zb_cluster_list_add_ias_zone_cluster(_cluster_list, esp_zb_ias_zone_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_CLIENT_ROLE);
   esp_zb_cluster_list_add_temperature_meas_cluster(_cluster_list, esp_zb_temperature_meas_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_CLIENT_ROLE);
@@ -86,37 +95,41 @@ ZigbeeGateway::ZigbeeGateway(uint8_t endpoint) : ZigbeeEP(endpoint) {
   esp_zb_cluster_list_add_thermostat_cluster(_cluster_list, esp_zb_thermostat_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_CLIENT_ROLE);
   
   //esp_zb_cluster_list_add_custom_cluster(_cluster_list, &poll_cluster,ESP_ZB_ZCL_CLUSTER_CLIENT_ROLE);
-  //esp_zb_cluster_list_add_custom_cluster(_cluster_list, &Tuya_custom,ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+  esp_zb_cluster_list_add_custom_cluster(_cluster_list, esp_zb_zcl_attr_list_create(TUYA_PRIVATE_CLUSTER_0),ESP_ZB_ZCL_CLUSTER_CLIENT_ROLE);
+  esp_zb_cluster_list_add_custom_cluster(_cluster_list, esp_zb_zcl_attr_list_create(TUYA_PRIVATE_CLUSTER_1),ESP_ZB_ZCL_CLUSTER_CLIENT_ROLE);
+  esp_zb_cluster_list_add_custom_cluster(_cluster_list, esp_zb_zcl_attr_list_create(TUYA_PRIVATE_CLUSTER_2),ESP_ZB_ZCL_CLUSTER_CLIENT_ROLE);
   
   _ep_config = {.endpoint = _endpoint, .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID, .app_device_id = ESP_ZB_HA_REMOTE_CONTROL_DEVICE_ID, .app_device_version = 0};
 }
 
 void ZigbeeGateway::bindCb(esp_zb_zdp_status_t zdo_status, void *user_ctx) {
   
-  if (zdo_status == ESP_ZB_ZDP_STATUS_SUCCESS) {
-    
-    if (user_ctx) {
-      
-      zb_device_params_t *sensor = (zb_device_params_t *)user_ctx;
-      
-      _instance->_gateway_devices.push_back(sensor);
-      
-      if (_instance->_clusters_2_bind > 0) --_instance->_clusters_2_bind;
-      
-      if (_instance->_clusters_2_bind == 0 && _instance->_on_bound_device)
-          _instance->_on_bound_device (sensor, true);
+  
+  zb_device_params_t *device = (zb_device_params_t *)user_ctx;
 
-      log_v("Binding success (ZC side) endpoint 0x%x cluster 0x%x", sensor->endpoint, sensor->cluster_id);
-    } else
-      log_v("Binding success (ED side");
-    
+  if (zdo_status == ESP_ZB_ZDP_STATUS_SUCCESS) {
+          
+      if (device->ZC_binding) { 
+        log_i("ZC has bounded to ZED (0x%x), endpoint (0x%x) cluster (0x%x)", device->short_addr, device->endpoint, device->cluster_id);
+      } else 
+        log_i("ZED (0x%x), endpoint (0x%x) cluster (0x%x) has bounded to ZC", device->short_addr, device->endpoint, device->cluster_id);
       _is_bound = true;
       _last_bind_success = true;
   } else {
-    log_e("Binding failed!");
-    _last_bind_success = false;
+      log_e("Binding failed (0x%x)! Device (0x%x), endpoint (0x%x), cluster (0x%x)", zdo_status, device->short_addr, device->endpoint, device->cluster_id);
+      _last_bind_success = false;
   }
   _in_binding = false;
+  free(device);
+  log_i("Semaphore give in binding");
+  xSemaphoreGive(gt_lock);
+  /*if (_instance->_clusters_2_bind > 0) --_instance->_clusters_2_bind;
+  if (_instance->_clusters_2_bind == 0)
+    {
+      _instance->_gateway_devices.push_back(device);
+      if(_instance->_on_bound_device)
+        _instance->_on_bound_device (device, true);
+    }*/
 }
 
 void ZigbeeGateway::find_Cb(esp_zb_zdp_status_t zdo_status, uint16_t addr, uint8_t endpoint, void *user_ctx) {
@@ -126,7 +139,6 @@ void ZigbeeGateway::find_Cb(esp_zb_zdp_status_t zdo_status, uint16_t addr, uint8
     
     esp_zb_zdo_bind_req_param_t bind_req;
     
-    /* Store the information of the remote device */
     zb_device_params_t *sensor = (zb_device_params_t *)malloc(sizeof(zb_device_params_t));
     sensor->endpoint = endpoint;
     sensor->short_addr = addr;
@@ -229,18 +241,31 @@ void ZigbeeGateway::bindDeviceCluster(zb_device_params_t * device,int16_t cluste
     esp_zb_zdo_bind_req_param_t bind_req;
     
     bind_req.req_dst_addr = device->short_addr;
-    log_d("Request sensor to bind us");
 
     /* populate the src information of the binding */
     memcpy(bind_req.src_address, device->ieee_addr, sizeof(esp_zb_ieee_addr_t));
     bind_req.src_endp = device->endpoint;
     bind_req.cluster_id = cluster_id; 
-    
+  
     bind_req.dst_addr_mode = ESP_ZB_ZDO_BIND_DST_ADDR_MODE_64_BIT_EXTENDED;
     esp_zb_get_long_address(bind_req.dst_address_u.addr_long);
     bind_req.dst_endp = _instance->getEndpoint(); 
     
-    esp_zb_zdo_device_bind_req(&bind_req, bindCb, NULL);
+    device->ZC_binding = false;
+    device->cluster_id = cluster_id;
+
+    log_d("Requesting ZED (0x%x), endpoint (0x%x), cluster_id (0x%x) to bind ZC", device->short_addr, device->endpoint, device->cluster_id);
+
+    zb_device_params_t *bind_device =(zb_device_params_t *)malloc(sizeof(zb_device_params_t));
+    memcpy(bind_device, device, sizeof(zb_device_params_t));
+
+    esp_zb_lock_acquire(portMAX_DELAY);
+    esp_zb_zdo_device_bind_req(&bind_req, bindCb, (void *)bind_device);
+    esp_zb_lock_release();
+    
+    if (xSemaphoreTake(gt_lock, ZB_CMD_TIMEOUT) != pdTRUE) {
+    log_e("Semaphore error while binding");
+  }
 
     bind_req.req_dst_addr = esp_zb_get_short_address();
 
@@ -251,10 +276,22 @@ void ZigbeeGateway::bindDeviceCluster(zb_device_params_t * device,int16_t cluste
     bind_req.dst_addr_mode = ESP_ZB_ZDO_BIND_DST_ADDR_MODE_64_BIT_EXTENDED;
     memcpy(bind_req.dst_address_u.addr_long, device->ieee_addr, sizeof(esp_zb_ieee_addr_t));
     bind_req.dst_endp = device->endpoint;
-
+    
+    device->ZC_binding = true;
     device->cluster_id = cluster_id;
-  
-    esp_zb_zdo_device_bind_req(&bind_req, bindCb, (void *)device);
+
+    bind_device =(zb_device_params_t *)malloc(sizeof(zb_device_params_t));
+    memcpy(bind_device, device, sizeof(zb_device_params_t));
+
+    log_d("Requesting ZC to bind ZED (0x%x), endpoint (0x%x), cluster_id (0x%x)", device->short_addr, device->endpoint, device->cluster_id);
+
+    esp_zb_lock_acquire(portMAX_DELAY);
+    esp_zb_zdo_device_bind_req(&bind_req, bindCb, (void *)bind_device);
+    esp_zb_lock_release();
+    
+    if (xSemaphoreTake(gt_lock, ZB_CMD_TIMEOUT) != pdTRUE) {
+    log_e("Semaphore error while binding");
+  }
   }
 }
 
